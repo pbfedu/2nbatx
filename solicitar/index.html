@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2nBatx OS - Solicitator</title>
+  
+  <!-- Fonts: Fredoka & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Outfit:wght@500;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome 6.5.1 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Framer Motion -->
+  <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+
+  <!-- jsPDF per generar el Ticket PDF -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Outfit', 'sans-serif'], display: ['Fredoka', 'sans-serif'] },
+          colors: {
+            duoGreen: '#58cc02', duoGreenDark: '#46a302',
+            duoBlue: '#1cb0f6', duoBlueDark: '#1899d6',
+            duoOrange: '#ff9600', duoOrangeDark: '#e08400',
+            duoPurple: '#ce82ff', duoPurpleDark: '#b060e0',
+            duoRed: '#ff4b4b', duoRedDark: '#ea2b2b',
+            duoYellow: '#ffc800', duoYellowDark: '#e0b000',
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      font-family: 'Outfit', sans-serif;
+      background-color: #f8fafc;
+      color: #1e293b;
+      background-image: radial-gradient(#cbd5e1 2px, transparent 2px);
+      background-size: 28px 28px;
+      user-select: none;
+    }
+    input, textarea {
+      user-select: text;
+    }
+    .duo-btn:active:not(:disabled) {
+      transform: translateY(5px);
+      border-bottom-width: 2px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <div id="root" class="flex-1 flex flex-col"></div>
+
+  <script type="text/babel">
+    const { useState, useMemo } = React;
+    const { motion, AnimatePresence } = window.Motion;
+
+    // --- ÀUDIO ---
+    let audioCtx = null;
+    const playSound = (type) => {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+        if (type === 'pop') {
+          osc.type = 'sine'; osc.frequency.setValueAtTime(520, now);
+          osc.frequency.exponentialRampToValueAtTime(800, now + 0.05);
+          gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+          osc.start(now); osc.stop(now + 0.05);
+        } else if (type === 'error') {
+          osc.type = 'sawtooth'; osc.frequency.setValueAtTime(220, now);
+          osc.frequency.exponentialRampToValueAtTime(130, now + 0.25);
+          gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+          osc.start(now); osc.stop(now + 0.25);
+        } else if (type === 'success') {
+          osc.type = 'triangle';
+          [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => osc.frequency.setValueAtTime(f, now + i * 0.08));
+          gain.gain.setValueAtTime(0.15, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          osc.start(now); osc.stop(now + 0.45);
+        }
+      } catch (e) {}
+    };
+
+    // --- DETECCIÓ DE MATÈRIES NO PERMESES ---
+    const checkRestrictedSubject = (text) => {
+      if (!text) return null;
+      const clean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+      
+      const restricted = [
+        { keys: ['geografia', 'geo'], reason: 'Geografia està exclosa de Solicitator.' },
+        { keys: ['historia del arte', 'historia de l\'art', 'historia de lart', 'art'], reason: 'Història de l\'Art està exclosa de Solicitator.' },
+        { keys: ['literatura catalana', 'lit catalana'], reason: 'Literatura Catalana està exclosa de Solicitator.' },
+        { keys: ['catala', 'llengua catalana', 'castella', 'castellano', 'lengua castellana', 'angles', 'ingles', 'english', 'historia d\'espanya', 'historia de espana', 'historia', 'filosofia', 'fase general', 'comunes'], reason: 'Les matèries de la Fase General no es poden sol·licitar aquí (ja existeixen o no són de modalitat).' }
+      ];
+
+      for (const item of restricted) {
+        if (item.keys.some(k => clean === k || clean.includes(k))) {
+          return item.reason;
+        }
+      }
+      return null;
+    };
+
+    // --- CATÀLEG D'ASSIGNATURES PREGUARDADES AMB ICONA I COLOR ---
+    const SUGGESTED_SUBJECTS = [
+      { name: 'Física', icon: 'fa-atom', pdfSymbol: 'atom', colorId: 'blue', badgeBg: 'bg-sky-100 text-sky-700 border-sky-200' },
+      { name: 'Química', icon: 'fa-flask', pdfSymbol: 'flask', colorId: 'purple', badgeBg: 'bg-purple-100 text-purple-700 border-purple-200' },
+      { name: 'Biologia', icon: 'fa-dna', pdfSymbol: 'dna', colorId: 'green', badgeBg: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+      { name: 'Dibuix Tècnic', icon: 'fa-compass-drafting', pdfSymbol: 'compass', colorId: 'orange', badgeBg: 'bg-orange-100 text-orange-700 border-orange-200' },
+      { name: 'Economia de l\'Empresa', icon: 'fa-chart-line', pdfSymbol: 'chart', colorId: 'emerald', badgeBg: 'bg-teal-100 text-teal-700 border-teal-200' },
+      { name: 'Tecnologia Industrial', icon: 'fa-gears', pdfSymbol: 'gear', colorId: 'blue', badgeBg: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
+      { name: 'Llatí', icon: 'fa-landmark', pdfSymbol: 'pillars', colorId: 'orange', badgeBg: 'bg-amber-100 text-amber-800 border-amber-200' },
+      { name: 'Grec', icon: 'fa-scroll', pdfSymbol: 'pillars', colorId: 'blue', badgeBg: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+      { name: 'Disseny', icon: 'fa-palette', pdfSymbol: 'palette', colorId: 'pink', badgeBg: 'bg-pink-100 text-pink-700 border-pink-200' }
+    ];
+
+    const ALL_QUESTION_TYPES = [
+      { label: 'Test ràpid (Tipus Kahoot)', icon: 'fa-bolt', pdfSymbol: 'bolt', color: [255, 150, 0] },
+      { label: 'Veritat o Mentida', icon: 'fa-circle-check', pdfSymbol: 'check', color: [88, 204, 2] },
+      { label: 'Conectar conceptes / Parelles', icon: 'fa-link', pdfSymbol: 'link', color: [28, 176, 246] },
+      { label: 'Completar el mot perdut', icon: 'fa-pen-clip', pdfSymbol: 'pen', color: [16, 185, 129] },
+      { label: 'Càlcul / Fórmules pas a pas', icon: 'fa-square-root-variable', pdfSymbol: 'math', color: [168, 85, 247] },
+      { label: 'Ordenar processos / Línia temporal', icon: 'fa-arrow-down-1-9', pdfSymbol: 'timeline', color: [236, 72, 153] },
+      { label: 'Identificar imatges / Esquemes', icon: 'fa-image', pdfSymbol: 'image', color: [245, 158, 11] },
+      { label: 'Simulacre preguntes curtes PAU', icon: 'fa-file-pen', pdfSymbol: 'doc', color: [71, 85, 105] }
+    ];
+
+    // --- DIBUIXANT D'ICONES VECTORIALS PER AL PDF (jsPDF) ---
+    const drawVectorIcon = (doc, symbol, cx, cy, size, rgb) => {
+      doc.saveGraphicsState();
+      doc.setDrawColor(...rgb);
+      doc.setFillColor(...rgb);
+      doc.setLineWidth(size * 0.13);
+      const r = size / 2;
+
+      switch (symbol) {
+        case 'atom': // Física
+          doc.circle(cx, cy, r * 0.22, 'F');
+          doc.ellipse(cx, cy, r * 0.9, r * 0.35, 'S');
+          doc.ellipse(cx, cy, r * 0.35, r * 0.9, 'S');
+          break;
+        case 'flask': // Química
+          doc.line(cx - r * 0.25, cy - r * 0.85, cx + r * 0.25, cy - r * 0.85);
+          doc.line(cx - r * 0.18, cy - r * 0.85, cx - r * 0.18, cy - r * 0.35);
+          doc.line(cx + r * 0.18, cy - r * 0.85, cx + r * 0.18, cy - r * 0.35);
+          doc.triangle(cx, cy - r * 0.45, cx - r * 0.8, cy + r * 0.85, cx + r * 0.8, cy + r * 0.85, 'S');
+          doc.line(cx - r * 0.45, cy + r * 0.3, cx + r * 0.45, cy + r * 0.3);
+          break;
+        case 'dna': // Biologia
+          doc.line(cx - r * 0.5, cy - r * 0.8, cx + r * 0.5, cy + r * 0.8);
+          doc.line(cx + r * 0.5, cy - r * 0.8, cx - r * 0.5, cy + r * 0.8);
+          doc.line(cx - r * 0.35, cy - r * 0.55, cx + r * 0.35, cy - r * 0.55);
+          doc.line(cx - r * 0.35, cy + r * 0.55, cx + r * 0.35, cy + r * 0.55);
+          break;
+        case 'compass': // Dibuix Tècnic
+          doc.circle(cx, cy - r * 0.65, r * 0.18, 'F');
+          doc.line(cx, cy - r * 0.5, cx - r * 0.65, cy + r * 0.85);
+          doc.line(cx, cy - r * 0.5, cx + r * 0.65, cy + r * 0.85);
+          doc.line(cx - r * 0.45, cy + r * 0.2, cx + r * 0.45, cy + r * 0.2);
+          break;
+        case 'chart': // Economia
+          doc.rect(cx - r * 0.75, cy + r * 0.1, r * 0.35, r * 0.75, 'F');
+          doc.rect(cx - r * 0.18, cy - r * 0.35, r * 0.35, r * 1.2, 'F');
+          doc.rect(cx + r * 0.4, cy - r * 0.8, r * 0.35, r * 1.65, 'F');
+          break;
+        case 'gear': // Tecnologia
+          doc.circle(cx, cy, r * 0.6, 'S');
+          doc.circle(cx, cy, r * 0.22, 'F');
+          for (let a = 0; a < 360; a += 45) {
+            const rad = (a * Math.PI) / 180;
+            doc.line(cx + Math.cos(rad) * r * 0.6, cy + Math.sin(rad) * r * 0.6, cx + Math.cos(rad) * r * 0.9, cy + Math.sin(rad) * r * 0.9);
+          }
+          break;
+        case 'pillars': // Llatí / Grec
+          doc.triangle(cx, cy - r * 0.9, cx - r * 0.9, cy - r * 0.45, cx + r * 0.9, cy - r * 0.45, 'F');
+          doc.line(cx - r * 0.55, cy - r * 0.4, cx - r * 0.55, cy + r * 0.7);
+          doc.line(cx, cy - r * 0.4, cx, cy + r * 0.7);
+          doc.line(cx + r * 0.55, cy - r * 0.4, cx + r * 0.55, cy + r * 0.7);
+          doc.line(cx - r * 0.85, cy + r * 0.8, cx + r * 0.85, cy + r * 0.8);
+          break;
+        case 'palette': // Disseny
+          doc.circle(cx, cy, r * 0.82, 'S');
+          doc.circle(cx - r * 0.3, cy - r * 0.25, r * 0.15, 'F');
+          doc.circle(cx + r * 0.25, cy - r * 0.3, r * 0.15, 'F');
+          doc.circle(cx - r * 0.25, cy + r * 0.3, r * 0.15, 'F');
+          break;
+        case 'bolt': // Kahoot
+          doc.triangle(cx + r * 0.15, cy - r * 0.9, cx - r * 0.55, cy + r * 0.1, cx + r * 0.1, cy + r * 0.1, 'F');
+          doc.triangle(cx - r * 0.15, cy + r * 0.9, cx + r * 0.55, cy - r * 0.1, cx - r * 0.1, cy - r * 0.1, 'F');
+          break;
+        case 'check': // Veritat o Mentida
+          doc.line(cx - r * 0.65, cy + r * 0.05, cx - r * 0.15, cy + r * 0.6);
+          doc.line(cx - r * 0.15, cy + r * 0.6, cx + r * 0.75, cy - r * 0.55);
+          break;
+        case 'link': // Conectar
+          doc.circle(cx - r * 0.35, cy, r * 0.42, 'S');
+          doc.circle(cx + r * 0.35, cy, r * 0.42, 'S');
+          break;
+        case 'pen': // Mot Perdut
+          doc.line(cx - r * 0.6, cy + r * 0.6, cx + r * 0.6, cy - r * 0.6);
+          doc.line(cx - r * 0.7, cy + r * 0.7, cx + r * 0.7, cy + r * 0.7);
+          break;
+        case 'math': // Càlcul
+          doc.line(cx - r * 0.75, cy + r * 0.1, cx - r * 0.4, cy + r * 0.7);
+          doc.line(cx - r * 0.4, cy + r * 0.7, cx - r * 0.05, cy - r * 0.65);
+          doc.line(cx - r * 0.05, cy - r * 0.65, cx + r * 0.8, cy - r * 0.65);
+          break;
+        case 'timeline': // Línia temporal
+          doc.line(cx, cy - r * 0.8, cx, cy + r * 0.8);
+          doc.circle(cx, cy - r * 0.55, r * 0.22, 'F');
+          doc.circle(cx, cy, r * 0.22, 'F');
+          doc.circle(cx, cy + r * 0.55, r * 0.22, 'F');
+          break;
+        case 'image': // Esquemes
+          doc.rect(cx - r * 0.8, cy - r * 0.65, r * 1.6, r * 1.3, 'S');
+          doc.circle(cx - r * 0.3, cy - r * 0.2, r * 0.16, 'F');
+          doc.triangle(cx - r * 0.5, cy + r * 0.5, cx + r * 0.1, cy - r * 0.05, cx + r * 0.65, cy + r * 0.5, 'F');
+          break;
+        case 'doc': // Simulacre PAU
+        default: // Estrella / Generic
+          doc.circle(cx, cy, r * 0.75, 'S');
+          doc.circle(cx, cy, r * 0.28, 'F');
+          break;
+      }
+      doc.restoreGraphicsState();
+    };
+
+    // --- GENERADOR DEL TICKET PDF PREMIUM ---
+    const generateTicketPDF = (data, ticketId) => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+      const pageW = 210;
+      const pageH = 297;
+      const margin = 15;
+      const contentW = pageW - margin * 2;
+
+      const colorMap = {
+        blue: { main: [28, 176, 246], dark: [24, 153, 214], light: [224, 242, 254] },
+        green: { main: [88, 204, 2], dark: [70, 163, 2], light: [220, 252, 231] },
+        purple: { main: [168, 85, 247], dark: [126, 34, 206], light: [243, 232, 255] },
+        orange: { main: [255, 150, 0], dark: [224, 132, 0], light: [255, 237, 213] },
+        emerald: { main: [16, 185, 129], dark: [5, 150, 105], light: [209, 250, 229] },
+        pink: { main: [236, 72, 153], dark: [190, 24, 93], light: [252, 231, 243] }
+      };
+      const palette = colorMap[data.themeColor] || colorMap.blue;
+
+      // Dibuixa el fons base i el marc de tiquet
+      const drawPageFrame = () => {
+        doc.setFillColor(241, 245, 249);
+        doc.rect(0, 0, pageW, pageH, 'F');
+
+        // Ombra 3D del tiquet principal
+        doc.setFillColor(203, 213, 225);
+        doc.roundedRect(margin, 12, contentW, pageH - 22, 8, 8, 'F');
+
+        // Cos blanc del tiquet
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.6);
+        doc.roundedRect(margin, 10, contentW, pageH - 22, 8, 8, 'FD');
+      };
+
+      drawPageFrame();
+      let y = 10;
+
+      // 1. CAPÇALERA HERO AMB OMBRES 3D I ICONA DE L'ASSIGNATURA
+      doc.setFillColor(...palette.dark);
+      doc.roundedRect(margin, y, contentW, 48, 8, 8, 'F');
+      doc.setFillColor(...palette.main);
+      doc.roundedRect(margin, y, contentW, 45.5, 8, 8, 'F');
+      // Tapem els cantons inferiors arrodonits de la capçalera perquè encaixi recte amb el tiquet
+      doc.rect(margin, y + 36, contentW, 12, 'F');
+
+      // Medalló blanc circular amb la icona de l'assignatura
+      const badgeX = margin + 22;
+      const badgeY = y + 24;
+      doc.setFillColor(...palette.dark);
+      doc.circle(badgeX, badgeY + 1.5, 13.5, 'F');
+      doc.setFillColor(255, 255, 255);
+      doc.circle(badgeX, badgeY, 13.5, 'F');
+
+      const matchedSub = SUGGESTED_SUBJECTS.find(s => s.name.toLowerCase() === data.subject.toLowerCase());
+      const subSymbol = matchedSub ? matchedSub.pdfSymbol : 'default';
+      drawVectorIcon(doc, subSymbol, badgeX, badgeY, 14, palette.main);
+
+      // Títols capçalera
+      const textStartX = margin + 42;
+      doc.setFillColor(255, 255, 255);
+      doc.roundedRect(textStartX, y + 8, 58, 6.5, 3, 3, 'F');
+      doc.setTextColor(...palette.dark);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text(`2NBATX OS  •  TICKET #${ticketId}`, textStartX + 3, y + 12.5);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      const titleFitted = doc.splitTextToSize(data.subject.toUpperCase(), contentW - 50)[0];
+      doc.text(titleFitted, textStartX, y + 25);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      const dateStr = new Date().toLocaleDateString('ca-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      doc.text(`Proposat per: ${data.studentName || 'Estudiant Anònim'}   •   ${dateStr}`, textStartX, y + 34);
+
+      y += 48;
+
+      // 2. TALL DE PERFORACIÓ ESTIL ENTRADA / PASSI VIP
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.7);
+      doc.setLineDashPattern([2.5, 2.5], 0);
+      doc.line(margin + 6, y, pageW - margin - 6, y);
+      doc.setLineDashPattern([], 0);
+
+      // Mosques semicirculars als laterals
+      doc.setFillColor(241, 245, 249);
+      doc.circle(margin, y, 4.5, 'F');
+      doc.circle(pageW - margin, y, 4.5, 'F');
+
+      y += 7;
+
+      // 3. AVÍS DESTACAT SENSE COMPROMÍS
+      const innerMargin = margin + 8;
+      const innerW = contentW - 16;
+
+      doc.setFillColor(254, 243, 199);
+      doc.setDrawColor(251, 191, 36);
+      doc.setLineWidth(0.6);
+      doc.roundedRect(innerMargin, y, innerW, 22, 4, 4, 'FD');
+
+      doc.setFillColor(245, 158, 11);
+      doc.circle(innerMargin + 7, y + 11, 4, 'F');
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10);
+      doc.text('!', innerMargin + 6.1, y + 12.5);
+
+      doc.setTextColor(146, 64, 14);
+      doc.setFontSize(9.5);
+      doc.text('PROPOSTA SUBJECTA A REVISIÓ (SENSE COMPROMÍS)', innerMargin + 15, y + 8);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      const warnLines = doc.splitTextToSize(
+        'Envia aquest PDF a l\'administrador juntament amb els APUNTS DEL TEMA. S\'estudiarà i es PLANTEJARÀ la seva creació sense cap garantia.',
+        innerW - 18
+      );
+      doc.text(warnLines, innerMargin + 15, y + 13.5);
+
+      y += 28;
+
+      // 4. TARGETES DE MECÀNIQUES AMB ICONES VECTORIALS EN GRAELLA
+      doc.setTextColor(30, 41, 59);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('Tipus d\'activitats i minijocs seleccionats:', innerMargin, y + 4);
+      y += 8;
+
+      const selectedQObjs = ALL_QUESTION_TYPES.filter(q => data.questionTypes.includes(q.label));
+      if (selectedQObjs.length === 0) {
+        selectedQObjs.push({ label: 'Format lliure a criteri de l\'administrador', pdfSymbol: 'doc', color: [100, 116, 139] });
+      }
+
+      const colW = (innerW - 4) / 2;
+      const pillH = 11.5;
+
+      selectedQObjs.forEach((qItem, idx) => {
+        const col = idx % 2;
+        const px = innerMargin + col * (colW + 4);
+
+        if (col === 0 && y + pillH > pageH - 25) {
+          doc.addPage();
+          drawPageFrame();
+          y = 20;
+        }
+
+        // Ombra i fons de la píndola
+        doc.setFillColor(226, 232, 240);
+        doc.roundedRect(px, y + 0.8, colW, pillH, 3.5, 3.5, 'F');
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(px, y, colW, pillH, 3.5, 3.5, 'FD');
+
+        // Cercle de color amb la icona dibuixada
+        doc.setFillColor(...qItem.color);
+        doc.circle(px + 6.5, y + pillH / 2, 3.8, 'F');
+        drawVectorIcon(doc, qItem.pdfSymbol, px + 6.5, y + pillH / 2, 4.4, [255, 255, 255]);
+
+        // Text de l'activitat
+        doc.setTextColor(51, 65, 85);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        const shortLabel = doc.splitTextToSize(qItem.label, colW - 15)[0];
+        doc.text(shortLabel, px + 12.5, y + pillH / 2 + 1.2);
+
+        if (col === 1 || idx === selectedQObjs.length - 1) {
+          y += pillH + 3;
+        }
+      });
+
+      y += 4;
+
+      // 5. BLOCS DE RESPOSTA DETALLATS
+      const addDetailCard = (numberBadge, title, bodyText) => {
+        const cleanBody = bodyText && bodyText.trim() ? bodyText.trim() : 'No especificat per l\'usuari.';
+        const lines = doc.splitTextToSize(cleanBody, innerW - 14);
+        const cardH = 13 + lines.length * 4.8;
+
+        if (y + cardH > pageH - 24) {
+          doc.addPage();
+          drawPageFrame();
+          y = 20;
+        }
+
+        // Ombra 3D subtil
+        doc.setFillColor(226, 232, 240);
+        doc.roundedRect(innerMargin, y + 1, innerW, cardH, 4, 4, 'F');
+
+        // Targeta
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(innerMargin, y, innerW, cardH, 4, 4, 'FD');
+
+        // Píndola numèrica del color de l'assignatura
+        doc.setFillColor(...palette.light);
+        doc.roundedRect(innerMargin + 4, y + 3.5, 7, 6, 2, 2, 'F');
+        doc.setTextColor(...palette.dark);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8.5);
+        doc.text(String(numberBadge), innerMargin + 6.5, y + 7.7);
+
+        // Títol del bloc
+        doc.setTextColor(30, 41, 59);
+        doc.setFontSize(10);
+        doc.text(title, innerMargin + 13.5, y + 7.8);
+
+        // Contingut
+        doc.setTextColor(71, 85, 105);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.2);
+        doc.text(lines, innerMargin + 5, y + 13.5);
+
+        y += cardH + 4.5;
+      };
+
+      addDetailCard(1, 'Temari i blocs que es volen treballar', data.topics);
+      addDetailCard(2, 'Visió estètica, estructura i format visual', data.visualization);
+      addDetailCard(3, 'Contingut imprescindible (fórmules, conceptes, exemples)', data.mustHaveContent);
+      addDetailCard(4, 'Dificultat i material d\'apunts adjunt', `Nivell desitjat: ${data.difficulty}   •   Format d'apunts: ${data.notesFormat}`);
+      if (data.extraNotes && data.extraNotes.trim()) {
+        addDetailCard(5, 'Notes addicionals per a l\'administrador', data.extraNotes);
+      }
+
+      // 6. PEU DE TICKET AMB CODI DE BARRES DECORATIU
+      const footerY = pageH - 22;
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineDashPattern([2, 2], 0);
+      doc.line(innerMargin, footerY - 3, pageW - innerMargin, footerY - 3);
+      doc.setLineDashPattern([], 0);
+
+      // Mini codi de barres estètic a l'esquerra
+      let bx = innerMargin;
+      const bars = [1.2, 0.5, 1.8, 0.7, 0.5, 1.5, 0.9, 0.5, 1.4, 0.6, 1.1, 0.5, 1.6, 0.8];
+      doc.setFillColor(148, 163, 184);
+      bars.forEach((w, i) => {
+        if (i % 2 === 0) doc.rect(bx, footerY, w, 6, 'F');
+        bx += w + 0.8;
+      });
+
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`SOLICITATOR • 2NBATX OS   |   Adjunta els apunts en enviar aquest PDF`, pageW - innerMargin, footerY + 4, { align: 'right' });
+
+      doc.save(`Ticket_${data.subject.replace(/\s+/g, '_')}_${ticketId}.pdf`);
+    };
+
+    function App() {
+      const [step, setStep] = useState(0);
+      const [ticketId] = useState(() => Math.random().toString(36).substring(2, 8).toUpperCase());
+
+      const [form, setForm] = useState({
+        subject: '',
+        studentName: '',
+        topics: '',
+        questionTypes: ['Test ràpid (Tipus Kahoot)', 'Veritat o Mentida'],
+        visualization: '',
+        mustHaveContent: '',
+        difficulty: 'Equilibrat (Repàs + PAU)',
+        notesFormat: 'PDF / Apunts propis',
+        themeColor: 'blue',
+        extraNotes: ''
+      });
+
+      const restrictionError = useMemo(() => checkRestrictedSubject(form.subject), [form.subject]);
+
+      const selectedSubjectMeta = useMemo(() => {
+        return SUGGESTED_SUBJECTS.find(s => s.name.toLowerCase() === form.subject.trim().toLowerCase()) || {
+          name: form.subject || 'Nova Matèria',
+          icon: 'fa-star',
+          badgeBg: 'bg-purple-100 text-purple-700 border-purple-200'
+        };
+      }, [form.subject]);
+
+      const colorOptions = [
+        { id: 'blue', name: 'Blau Elèctric', bg: 'bg-duoBlue' },
+        { id: 'green', name: 'Verd Duo', bg: 'bg-duoGreen' },
+        { id: 'purple', name: 'Lila Màgic', bg: 'bg-duoPurple' },
+        { id: 'orange', name: 'Taronja Foc', bg: 'bg-duoOrange' },
+        { id: 'emerald', name: 'Maragda', bg: 'bg-emerald-500' },
+        { id: 'pink', name: 'Rosa Neó', bg: 'bg-pink-500' }
+      ];
+
+      const toggleQuestionType = (label) => {
+        playSound('pop');
+        setForm(prev => {
+          const exists = prev.questionTypes.includes(label);
+          return {
+            ...prev,
+            questionTypes: exists
+              ? prev.questionTypes.filter(x => x !== label)
+              : [...prev.questionTypes, label]
+          };
+        });
+      };
+
+      const nextStep = () => {
+        if (step === 1 && (!form.subject.trim() || restrictionError)) {
+          playSound('error');
+          return;
+        }
+        playSound('pop');
+        if (step === 5) {
+          playSound('success');
+          if (window.confetti) window.confetti({ particleCount: 90, spread: 70, origin: { y: 0.6 } });
+        }
+        setStep(s => s + 1);
+      };
+
+      const prevStep = () => {
+        playSound('pop');
+        setStep(s => Math.max(0, s - 1));
+      };
+
+      const totalSteps = 5;
+      const progressPct = step === 0 ? 0 : step > totalSteps ? 100 : (step / totalSteps) * 100;
+
+      return (
+        <div className="w-full max-w-3xl mx-auto p-4 sm:p-6 flex flex-col min-h-screen justify-between">
+          
+          {/* BARRA SUPERIOR */}
+          <header className="flex items-center justify-between gap-4 py-2">
+            <a
+              href="index.html"
+              onClick={() => playSound('pop')}
+              className="flex items-center gap-2 bg-white border-2 border-b-4 border-slate-200 px-4 py-2 rounded-2xl font-display font-black text-slate-600 hover:text-slate-900 duo-btn text-sm"
+            >
+              <i className="fa-solid fa-arrow-left"></i>
+              <span>2nBatx OS</span>
+            </a>
+
+            {step > 0 && step <= totalSteps && (
+              <div className="flex-1 bg-slate-200 h-4 rounded-full overflow-hidden border-2 border-slate-300">
+                <motion.div
+                  initial={{ width: 0 }}
+                  animate={{ width: `${progressPct}%` }}
+                  className="bg-duoPurple h-full rounded-full"
+                />
+              </div>
+            )}
+
+            <div className="bg-purple-100 text-purple-700 border-2 border-purple-200 px-3.5 py-1.5 rounded-2xl font-display font-black text-xs uppercase tracking-wider">
+              Solicitator
+            </div>
+          </header>
+
+          {/* CONTINGUT PRINCIPAL */}
+          <main className="my-auto py-6">
+            <AnimatePresence mode="wait">
+
+              {/* PAS 0: PORTADA */}
+              {step === 0 && (
+                <motion.div
+                  key="step0"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="bg-white border-[3px] border-b-[8px] border-slate-200 rounded-[36px] p-7 sm:p-10 text-center space-y-6 shadow-sm"
+                >
+                  <div className="w-24 h-24 mx-auto rounded-[28px] bg-duoPurple text-white flex items-center justify-center text-5xl shadow-lg border-2 border-black/10">
+                    <i className="fa-solid fa-wand-magic-sparkles"></i>
+                  </div>
+
+                  <div className="space-y-2">
+                    <h1 className="text-3xl sm:text-4xl font-display font-black text-slate-800">
+                      Crea la teva proposta de mòdul
+                    </h1>
+                    <p className="text-slate-500 font-bold text-base sm:text-lg max-w-xl mx-auto">
+                      Dissenya com t'agradaria estudiar una matèria de modalitat, genera el teu <strong>Ticket PDF</strong> i envia'l a l'administrador amb els teus apunts.
+                    </p>
+                  </div>
+
+                  <div className="bg-amber-50 border-2 border-amber-200 rounded-[24px] p-5 text-left space-y-2">
+                    <div className="flex items-center gap-2 text-amber-800 font-display font-black text-base">
+                      <i className="fa-solid fa-triangle-exclamation text-amber-500"></i>
+                      <span>Normes importants abans de començar:</span>
+                    </div>
+                    <ul className="text-sm font-bold text-amber-900/80 space-y-1.5 pl-6 list-disc">
+                      <li>Només s'accepten <strong>matèries de modalitat</strong> (Física, Química, Biologia, Economia, Dibuix, Llatí, etc.).</li>
+                      <li><strong>NO disponibles:</strong> Geografia, Història de l'Art, Literatura Catalana ni assignatures de la Fase General.</li>
+                      <li>Enviar el tiquet implica que <strong>es plantejarà la seva creació sense cap compromís</strong>.</li>
+                    </ul>
+                  </div>
+
+                  <button
+                    onClick={() => { playSound('pop'); setStep(1); }}
+                    className="w-full bg-duoPurple hover:bg-duoPurpleDark text-white font-display font-black text-xl py-4 rounded-[24px] border-x-2 border-t-2 border-b-[6px] border-black/15 shadow-lg duo-btn uppercase tracking-wider"
+                  >
+                    Començar Sol·licitud <i className="fa-solid fa-arrow-right ml-2"></i>
+                  </button>
+                </motion.div>
+              )}
+
+              {/* PAS 1: QUINA MATÈRIA VOLS? (AMB ICONES PREGUARDADES) */}
+              {step === 1 && (
+                <motion.div
+                  key="step1"
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -30 }}
+                  className="bg-white border-[3px] border-b-[8px] border-slate-200 rounded-[36px] p-6 sm:p-9 space-y-6"
+                >
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-widest text-duoPurple">Pas 1 de 5</span>
+                    <h2 className="text-2xl sm:text-3xl font-display font-black text-slate-800 mt-1">
+                      Quina matèria de modalitat proposes?
+                    </h2>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="relative flex items-center">
+                      <div className="absolute left-4 text-xl text-duoPurple">
+                        <i className={`fa-solid ${selectedSubjectMeta.icon}`}></i>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="Tria una de sota o escriu una altra de modalitat..."
+                        value={form.subject}
+                        onChange={(e) => setForm({ ...form, subject: e.target.value })}
+                        className={`w-full pl-12 pr-4 py-4 rounded-[20px] border-[3px] font-display font-bold text-lg outline-none transition-colors ${
+                          restrictionError ? 'border-duoRed bg-red-50 text-duoRedDark' : 'border-slate-200 focus:border-duoPurple bg-slate-50 focus:bg-white'
+                        }`}
+                      />
+                    </div>
+
+                    {restrictionError && (
+                      <div className="bg-red-100 border-2 border-duoRed text-duoRedDark p-4 rounded-2xl font-bold text-sm flex items-center gap-3">
+                        <i className="fa-solid fa-ban text-xl"></i>
+                        <span>{restrictionError}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Assignatures preguardades amb les seves icones */}
+                  <div className="space-y-2.5">
+                    <p className="text-xs font-black text-slate-400 uppercase">Assignatures preguardades (amb icona al PDF):</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                      {SUGGESTED_SUBJECTS.map(sub => {
+                        const isSelected = form.subject.toLowerCase() === sub.name.toLowerCase();
+                        return (
+                          <button
+                            key={sub.name}
+                            onClick={() => {
+                              playSound('pop');
+                              setForm({ ...form, subject: sub.name, themeColor: sub.colorId });
+                            }}
+                            className={`p-3 rounded-2xl font-display font-bold text-sm border-2 border-b-4 flex items-center gap-2.5 transition-all text-left ${
+                              isSelected
+                                ? 'bg-duoPurple text-white border-duoPurpleDark scale-[1.02]'
+                                : `${sub.badgeBg} hover:brightness-95`
+                            }`}
+                          >
+                            <i className={`fa-solid ${sub.icon} text-base w-5 text-center`}></i>
+                            <span className="truncate">{sub.name}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="pt-2">
+                    <label className="block text-sm font-black text-slate-600 mb-2">El teu nom o àlies (opcional):</label>
+                    <input
+                      type="text"
+                      placeholder="Per posar-lo al tiquet..."
+                      value={form.studentName}
+                      onChange={(e) => setForm({ ...form, studentName: e.target.value })}
+                      className="w-full p-3.5 rounded-[18px] border-2 border-slate-200 bg-slate-50 focus:bg-white focus:border-duoPurple font-bold outline-none"
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              {/* PAS 2: TEMARI CONCRET */}
+              {step === 2 && (
+                <motion.div
+                  key="step2"
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -30 }}
+                  className="bg-white border-[3px] border-b-[8px] border-slate-200 rounded-[36px] p-6 sm:p-9 space-y-6"
+                >
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-widest text-duoBlue flex items-center gap-2">
+                      <i className={`fa-solid ${selectedSubjectMeta.icon}`}></i> Pas 2 de 5 • {form.subject}
+                    </span>
+                    <h2 className="text-2xl sm:text-3xl font-display font-black text-slate-800 mt-1">
+                      Quins temes o blocs vols que entri?
+                    </h2>
+                    <p className="text-slate-500 font-bold text-sm mt-1">
+                      Especifica si és un tema concret (ex: "Enllaç químic i estequiometria") o tot el curs.
+                    </p>
+                  </div>
+
+                  <textarea
+                    rows="4"
+                    placeholder="Escriu aquí els temes, unitats didàctiques o blocs que apareixen als apunts que adjuntaràs..."
+                    value={form.topics}
+                    onChange={(e) => setForm({ ...form, topics: e.target.value })}
+                    className="w-full p-4 rounded-[22px] border-[3px] border-slate-200 bg-slate-50 focus:bg-white focus:border-duoBlue font-bold text-base outline-none resize-none"
+                  />
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-black text-slate-600">Quin format d'apunts enviaràs?</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                      {['PDF / Apunts propis', 'Fotos de llibreta', 'Resums digitals / Docs'].map(fmt => (
+                        <button
+                          key={fmt}
+                          onClick={() => { playSound('pop'); setForm({ ...form, notesFormat: fmt }); }}
+                          className={`p-3 rounded-2xl border-2 border-b-4 font-display font-bold text-sm transition-all ${
+                            form.notesFormat === fmt ? 'bg-blue-50 border-duoBlue text-duoBlueDark' : 'bg-white border-slate-200 text-slate-600'
+                          }`}
+                        >
+                          {fmt}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+              {/* PAS 3: TIPUS DE PREGUNTES */}
+              {step === 3 && (
+                <motion.div
+                  key="step3"
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -30 }}
+                  className="bg-white border-[3px] border-b-[8px] border-slate-200 rounded-[36px] p-6 sm:p-9 space-y-6"
+                >
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-widest text-duoOrange">Pas 3 de 5 • Mecàniques</span>
+                    <h2 className="text-2xl sm:text-3xl font-display font-black text-slate-800 mt-1">
+                      Quins tipus de preguntes es necessiten?
+                    </h2>
+                    <p className="text-slate-500 font-bold text-sm mt-1">
+                      Aquestes icones i activitats sortiran dibuixades al teu Ticket PDF.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {ALL_QUESTION_TYPES.map(item => {
+                      const active = form.questionTypes.includes(item.label);
+                      return (
+                        <button
+                          key={item.label}
+                          onClick={() => toggleQuestionType(item.label)}
+                          className={`p-4 rounded-[20px] border-2 border-b-[5px] text-left font-display font-bold text-sm flex items-center gap-3 transition-all ${
+                            active
+                              ? 'bg-orange-50 border-duoOrange text-duoOrangeDark'
+                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0 ${active ? 'bg-duoOrange text-white' : 'bg-slate-100 text-slate-400'}`}>
+                            <i className={`fa-solid ${item.icon}`}></i>
+                          </div>
+                          <span>{item.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              )}
+
+              {/* PAS 4: COM HO VISUALITZES? */}
+              {step === 4 && (
+                <motion.div
+                  key="step4"
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -30 }}
+                  className="bg-white border-[3px] border-b-[8px] border-slate-200 rounded-[36px] p-6 sm:p-9 space-y-6"
+                >
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-widest text-duoGreen">Pas 4 de 5 • Disseny</span>
+                    <h2 className="text-2xl sm:text-3xl font-display font-black text-slate-800 mt-1">
+                      Com t'ho imagines visualment?
+                    </h2>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-black text-slate-600">Color principal per al mòdul i el tiquet PDF:</label>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
+                      {colorOptions.map(c => (
+                        <button
+                          key={c.id}
+                          onClick={() => { playSound('pop'); setForm({ ...form, themeColor: c.id }); }}
+                          className={`p-3 rounded-2xl border-2 flex flex-col items-center gap-1.5 transition-all ${
+                            form.themeColor === c.id ? 'border-slate-800 bg-slate-100 scale-105' : 'border-slate-200 bg-white'
+                          }`}
+                        >
+                          <div className={`w-8 h-8 rounded-full ${c.bg} shadow-sm`}></div>
+                          <span className="text-[11px] font-black text-slate-600">{c.name.split(' ')[0]}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-sm font-black text-slate-600">
+                      Com ho visualitzes? (Estructura, ruta per nivells, dibuixos, gràfics...)
+                    </label>
+                    <textarea
+                      rows="3"
+                      placeholder="Ex: M'agradaria que fos una ruta dividida per blocs amb esquemes visuals i reptes ràpids de 5 preguntes..."
+                      value={form.visualization}
+                      onChange={(e) => setForm({ ...form, visualization: e.target.value })}
+                      className="w-full p-4 rounded-[20px] border-[3px] border-slate-200 bg-slate-50 focus:bg-white focus:border-duoGreen font-bold text-sm outline-none resize-none"
+                    />
+                  </div>
+                </motion.div>
+              )}
+
+              {/* PAS 5: QUÈ HI POSARIES CONCRETAMENT? */}
+              {step === 5 && (
+                <motion.div
+                  key="step5"
+                  initial={{ opacity: 0, x: 30 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -30 }}
+                  className="bg-white border-[3px] border-b-[8px] border-slate-200 rounded-[36px] p-6 sm:p-9 space-y-6"
+                >
+                  <div>
+                    <span className="text-xs font-black uppercase tracking-widest text-duoRed">Pas 5 de 5 • Contingut Clau</span>
+                    <h2 className="text-2xl sm:text-3xl font-display font-black text-slate-800 mt-1">
+                      Què hi posaries sí o sí?
+                    </h2>
+                    <p className="text-slate-500 font-bold text-sm mt-1">
+                      Fórmules imprescindibles, definicions trampa, exemples d'examen o detalls importants.
+                    </p>
+                  </div>
+
+                  <textarea
+                    rows="3"
+                    placeholder="Ex: Que entri la formulació inorgànica, ajust de reaccions redox i preguntes típiques que sempre cauen a les PAU..."
+                    value={form.mustHaveContent}
+                    onChange={(e) => setForm({ ...form, mustHaveContent: e.target.value })}
+                    className="w-full p-4 rounded-[20px] border-[3px] border-slate-200 bg-slate-50 focus:bg-white focus:border-duoRed font-bold text-sm outline-none resize-none"
+                  />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                    {['Bàsic (Per entendre la base)', 'Equilibrat (Repàs + PAU)', 'Mode Expert (Nivell 10 PAU)'].map(diff => (
+                      <button
+                        key={diff}
+                        onClick={() => { playSound('pop'); setForm({ ...form, difficulty: diff }); }}
+                        className={`p-3 rounded-2xl border-2 border-b-4 font-display font-bold text-xs sm:text-sm transition-all ${
+                          form.difficulty === diff ? 'bg-red-50 border-duoRed text-duoRedDark' : 'bg-white border-slate-200 text-slate-600'
+                        }`}
+                      >
+                        {diff}
+                      </button>
+                    ))}
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Alguna altra cosa que vulguis dir-li a l'administrador? (Opcional)"
+                    value={form.extraNotes}
+                    onChange={(e) => setForm({ ...form, extraNotes: e.target.value })}
+                    className="w-full p-3.5 rounded-[18px] border-2 border-slate-200 bg-slate-50 focus:bg-white focus:border-slate-400 font-bold text-sm outline-none"
+                  />
+                </motion.div>
+              )}
+
+              {/* PAS 6: TICKET GENERAT + DESCÀRREGA PDF */}
+              {step === 6 && (
+                <motion.div
+                  key="step6"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className="space-y-6"
+                >
+                  <div className="bg-white border-[3px] border-b-[8px] border-slate-200 rounded-[36px] overflow-hidden shadow-xl">
+                    <div className="bg-slate-900 text-white p-6 sm:p-8 flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 rounded-2xl bg-white text-slate-900 flex items-center justify-center text-3xl shadow-md shrink-0">
+                          <i className={`fa-solid ${selectedSubjectMeta.icon}`}></i>
+                        </div>
+                        <div>
+                          <span className="bg-duoGreen text-slate-900 text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full">
+                            Ticket Llesta • #{ticketId}
+                          </span>
+                          <h2 className="text-2xl sm:text-3xl font-display font-black mt-1.5">{form.subject}</h2>
+                          <p className="text-slate-400 text-xs sm:text-sm font-bold">Proposta de mòdul de modalitat</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-6 sm:p-8 space-y-4 text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border-2 border-slate-100">
+                        <div>
+                          <span className="text-xs font-black text-slate-400 uppercase">Temes proposats</span>
+                          <p className="font-bold text-slate-700 mt-0.5 line-clamp-2">{form.topics || 'Tot el temari'}</p>
+                        </div>
+                        <div>
+                          <span className="text-xs font-black text-slate-400 uppercase">Nivell i Apunts</span>
+                          <p className="font-bold text-slate-700 mt-0.5">{form.difficulty} ({form.notesFormat})</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-xs font-black text-slate-400 uppercase">Mecàniques i icones incloses al PDF</span>
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {ALL_QUESTION_TYPES.filter(q => form.questionTypes.includes(q.label)).map(q => (
+                            <span key={q.label} className="bg-purple-100 text-purple-800 font-bold text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-purple-200">
+                              <i className={`fa-solid ${q.icon}`}></i>
+                              <span>{q.label}</span>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 space-y-2 mt-4">
+                        <h4 className="font-display font-black text-amber-900 text-base flex items-center gap-2">
+                          <i className="fa-solid fa-paper-plane text-amber-600"></i>
+                          Passos següents un cop descarregat:
+                        </h4>
+                        <p className="text-amber-900/90 font-bold text-sm leading-relaxed">
+                          1. Descarrega el teu <strong>Ticket en PDF</strong> amb el botó de sota.<br/>
+                          2. Envia aquest PDF a l'administrador <strong>juntament amb els apunts d'aquest tema</strong>.<br/>
+                          3. Amb el material rebut, <strong>es PLANTEJARÀ que es faci</strong> (sense compromís ni garantia de creació).
+                        </p>
+                      </div>
+
+                      <div className="pt-2 flex flex-col sm:flex-row gap-3">
+                        <button
+                          onClick={() => { playSound('success'); generateTicketPDF(form, ticketId); }}
+                          className="flex-1 bg-duoGreen hover:bg-duoGreenDark text-white font-display font-black text-lg py-4 px-6 rounded-[22px] border-x-2 border-t-2 border-b-[6px] border-black/15 shadow-lg duo-btn flex items-center justify-center gap-3"
+                        >
+                          <i className="fa-solid fa-file-pdf text-2xl"></i>
+                          <span>Descarregar Ticket PDF</span>
+                        </button>
+
+                        <button
+                          onClick={() => { playSound('pop'); setStep(1); }}
+                          className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-display font-black text-base py-4 px-6 rounded-[22px] border-2 border-b-[6px] border-slate-300 duo-btn"
+                        >
+                          Editar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+
+            </AnimatePresence>
+          </main>
+
+          {/* BOTONS DE NAVEGACIÓ INFERIOR */}
+          {step >= 1 && step <= totalSteps && (
+            <footer className="py-4 flex items-center justify-between gap-4">
+              <button
+                onClick={prevStep}
+                className="bg-white hover:bg-slate-100 text-slate-500 font-display font-black text-base py-3.5 px-6 rounded-[20px] border-2 border-b-[5px] border-slate-200 duo-btn"
+              >
+                Enrere
+              </button>
+
+              <button
+                disabled={step === 1 && (!form.subject.trim() || !!restrictionError)}
+                onClick={nextStep}
+                className={`flex-1 max-w-xs font-display font-black text-lg py-3.5 px-8 rounded-[20px] border-x-2 border-t-2 border-b-[5px] duo-btn transition-all ${
+                  step === 1 && (!form.subject.trim() || !!restrictionError)
+                    ? 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed'
+                    : step === totalSteps
+                      ? 'bg-duoGreen text-white border-black/15 shadow-md'
+                      : 'bg-duoBlue text-white border-black/15 shadow-md'
+                }`}
+              >
+                {step === totalSteps ? 'Generar Ticket' : 'Següent'}
+              </button>
+            </footer>
+          )}
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
