@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="ca">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>2n Batx OS</title>
+  
+  <!-- Fonts: Fredoka & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Outfit:wght@500;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome 6.5.1 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & ReactDOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  
+  <!-- Framer Motion -->
+  <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
+
+  <!-- Babel -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Outfit', 'sans-serif'], display: ['Fredoka', 'sans-serif'] },
+          colors: { duoGreen: '#58cc02' }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body, html {
+      margin: 0; padding: 0; width: 100%; height: 100%;
+      overflow: hidden; font-family: 'Outfit', sans-serif;
+      background-color: #f8fafc; user-select: none; -webkit-user-select: none;
+    }
+
+    .canvas-bg {
+      position: fixed; inset: 0; z-index: 0;
+      background-image: radial-gradient(#cbd5e1 2px, transparent 2px);
+      background-size: 32px 32px; opacity: 0.45; pointer-events: none;
+    }
+
+    .gpu-layer {
+      will-change: transform;
+      transform: translateZ(0);
+    }
+
+    @keyframes wiiFloat {
+      0%, 100% { transform: translate3d(0, 0px, 0); }
+      50% { transform: translate3d(0, -10px, 0); }
+    }
+    .float-a { animation: wiiFloat 3.4s ease-in-out infinite; }
+    .float-b { animation: wiiFloat 4.1s ease-in-out infinite 0.5s; }
+    .float-c { animation: wiiFloat 3.7s ease-in-out infinite 1.1s; }
+
+    /* Botó 3D tipus Duolingo */
+    .duo-btn:active {
+      transform: translateY(5px);
+      border-bottom-width: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="root" class="w-full h-full relative"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+    const { motion, AnimatePresence } = window.Motion;
+
+    // ==========================================
+    // ⚙️ CONFIGURACIÓ DE LES ASSIGNATURES
+    // Edita el nom, descripció, icona, colors i enllaç aquí
+    // ==========================================
+    const MODULS = [
+      {  
+        id: 'historia', 
+        name: 'HistòriaLab', 
+        tag: 'Història d\'Espanya i Catalunya',
+        desc: 'Repassa els temes clau amb la Ruta del Temps, decrets del BOE, línies cronològiques i tests ràpids.',
+        icon: 'fa-monument', 
+        color: 'from-red-400 to-red-600', 
+        solidBg: 'bg-red-500',
+        borderDark: 'border-red-700',
+        badgeBg: 'bg-red-100 text-red-700',
+        shadow: 'shadow-red-500/35', 
+        link: 'https://pbfedu.github.io/historialab?pro=true' 
+      },
+      { 
+        id: 'mates', 
+        name: 'Functio', 
+        tag: 'Matemàtiques',
+        desc: 'Practica les funcions, punts de tall, punts prohibits i els límits.',
+        icon: 'fa-calculator', 
+        color: 'from-blue-400 to-blue-600', 
+        solidBg: 'bg-blue-500',
+        borderDark: 'border-blue-700',
+        badgeBg: 'bg-blue-100 text-blue-700',
+        shadow: 'shadow-blue-500/35', 
+        link: 'https://pbfedu.github.io/functio' 
+      },
+      { 
+        id: 'catala', 
+        name: 'Fonètica Catalana', 
+        tag: 'Llengua i Literatura Catalana',
+        desc: 'Domina la fonètica per a la selectivitat.',
+        icon: 'fa-book-open', 
+        color: 'from-yellow-400 to-amber-500', 
+        solidBg: 'bg-amber-500',
+        borderDark: 'border-amber-700',
+        badgeBg: 'bg-amber-100 text-amber-800',
+        shadow: 'shadow-yellow-500/35', 
+        link: 'https://pbfedu.github.io/afi?pro=true' 
+      },
+      { 
+        id: 'castella', 
+        name: 'LenguaQuest', 
+        tag: 'Lengua Castellana y Literatura',
+        desc: 'Prepara los contenidos del curso.',
+        icon: 'fa-language', 
+        color: 'from-orange-400 to-orange-600', 
+        solidBg: 'bg-orange-500',
+        borderDark: 'border-orange-700',
+        badgeBg: 'bg-orange-100 text-orange-700',
+        shadow: 'shadow-orange-500/35', 
+        link: 'https://pbfedu.github.io/lenguaquest' 
+      },
+      { 
+        id: 'filo', 
+        name: 'Polis', 
+        tag: 'Història de la Filosofia',
+        desc: 'Descobreix Plató amb les seves idees i crea la teva ciutat',
+        icon: 'fa-brain', 
+        color: 'from-emerald-400 to-emerald-600', 
+        solidBg: 'bg-emerald-500',
+        borderDark: 'border-emerald-700',
+        badgeBg: 'bg-emerald-100 text-emerald-700',
+        shadow: 'shadow-emerald-500/35', 
+        link: 'https://pbfedu.github.io/polis' 
+      },
+      { 
+        id: 'pau', 
+        name: 'Solicitar Noves Matèries', 
+        tag: 'Sigues part de 2nBatx',
+        desc: 'Proposa noves activitats i plataformes',
+        icon: 'fa-graduation-cap', 
+        color: 'from-slate-700 to-slate-900', 
+        solidBg: 'bg-slate-800',
+        borderDark: 'border-slate-950',
+        badgeBg: 'bg-slate-200 text-slate-800',
+        shadow: 'shadow-slate-600/35', 
+        link: 'https://pbfedu.github.io/2nbatx/solicitar' 
+      },
+    ];
+
+    // --- ÀUDIO ---
+    let audioCtx = null;
+    const playSound = (type) => {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        const now = ctxTime = audioCtx.currentTime;
+        if (type === 'pop') {
+          osc.type = 'sine'; osc.frequency.setValueAtTime(650, now);
+          gain.gain.setValueAtTime(0.02, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+          osc.start(now); osc.stop(now + 0.04);
+        } else if (type === 'openCard') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(440, now);
+          osc.frequency.exponentialRampToValueAtTime(660, now + 0.09);
+          gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+          osc.start(now); osc.stop(now + 0.09);
+        } else if (type === 'boot') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(523.25, now);
+          osc.frequency.setValueAtTime(659.25, now + 0.08);
+          osc.frequency.setValueAtTime(1046.5, now + 0.16);
+          gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          osc.start(now); osc.stop(now + 0.45);
+        } else if (type === 'launch') {
+          osc.type = 'sine'; osc.frequency.setValueAtTime(400, now);
+          osc.frequency.exponentialRampToValueAtTime(950, now + 0.14);
+          gain.gain.setValueAtTime(0.12, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+          osc.start(now); osc.stop(now + 0.14);
+        }
+      } catch (e) {}
+    };
+
+    // --- ALGORITME HONEYCOMB DINÀMIC ---
+    const buildDynamicHoneycomb = (items) => {
+      const n = items.length;
+      if (n === 0) return [];
+      if (n <= 3) return [items];
+
+      const cols = n <= 5 ? 3 : n <= 8 ? 3 : n <= 12 ? 4 : 5;
+      const rows = [];
+      let idx = 0;
+      let isShortRow = true;
+
+      while (idx < n) {
+        const count = isShortRow ? Math.max(2, cols - 1) : cols;
+        if (n - idx === count + 1 && count > 2) {
+          rows.push(items.slice(idx, idx + count - 1));
+          idx += count - 1;
+        } else {
+          rows.push(items.slice(idx, idx + count));
+          idx += count;
+        }
+        isShortRow = !isShortRow;
+      }
+      return rows;
+    };
+
+    // --- RELLOTGE ---
+    const LiveClock = () => {
+      const [time, setTime] = useState(new Date());
+      useEffect(() => {
+        const timer = setInterval(() => setTime(new Date()), 1000);
+        return () => clearInterval(timer);
+      }, []);
+      return (
+        <div className="flex flex-col items-end">
+          <div className="text-xl sm:text-2xl font-display font-black text-slate-800 tracking-tighter leading-none">
+            {time.toLocaleTimeString('ca-ES', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+          <div className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">
+            {time.toLocaleDateString('ca-ES', { weekday: 'short', day: 'numeric', month: 'short' })}
+          </div>
+        </div>
+      );
+    };
+
+    // --- PANTALLA DE CÀRREGA INICIAL ---
+    const BootScreen = ({ onComplete }) => {
+      useEffect(() => {
+        const timer = setTimeout(() => {
+          playSound('boot');
+          onComplete();
+        }, 1200);
+        return () => clearTimeout(timer);
+      }, []);
+
+      return (
+        <motion.div
+          exit={{ opacity: 0, scale: 1.08 }}
+          transition={{ duration: 0.35, ease: "easeOut" }}
+          className="fixed inset-0 z-[100] bg-slate-900 flex flex-col items-center justify-center text-white"
+        >
+          <motion.div
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className="w-24 h-24 rounded-[28px] bg-duoGreen flex items-center justify-center text-5xl shadow-lg shadow-duoGreen/30 mb-6 border-4 border-white/20"
+          >
+            <i className="fa-solid fa-graduation-cap"></i>
+          </motion.div>
+          
+          <motion.h1
+            initial={{ y: 15, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.15 }}
+            className="text-4xl font-display font-black tracking-tight mb-4"
+          >
+            2nBatx <span className="text-duoGreen">OS</span>
+          </motion.h1>
+
+          <div className="w-48 h-2 bg-slate-800 rounded-full overflow-hidden">
+            <motion.div
+              initial={{ width: "0%" }}
+              animate={{ width: "100%" }}
+              transition={{ duration: 1.05, ease: "easeInOut" }}
+              className="h-full bg-duoGreen rounded-full"
+            />
+          </div>
+        </motion.div>
+      );
+    };
+
+    // --- BOMBÓLLA INDIVIDUAL ARROSSEGABLE ---
+    const Bubble = ({ mod, index, constraintsRef, onSelect }) => {
+      const floatClasses = ['float-a', 'float-b', 'float-c'];
+      const floatClass = floatClasses[index % 3];
+      const dragOccurred = useRef(false);
+
+      return (
+        <motion.div
+          drag
+          dragConstraints={constraintsRef}
+          dragElastic={0.18}
+          dragMomentum={false}
+          onDragStart={() => { dragOccurred.current = true; }}
+          onDragEnd={() => { setTimeout(() => { dragOccurred.current = false; }, 150); }}
+          whileDrag={{ scale: 1.15, zIndex: 50, cursor: 'grabbing' }}
+          initial={{ scale: 0, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: "spring", stiffness: 320, damping: 22, delay: 0.08 + index * 0.04 }}
+          className="relative z-10 hover:z-40 pointer-events-auto cursor-grab touch-none"
+        >
+          <div className={`${floatClass} gpu-layer`}>
+            <motion.div
+              whileHover={{ scale: 1.09 }}
+              whileTap={{ scale: 0.93 }}
+              onHoverStart={() => playSound('pop')}
+              onTap={() => {
+                if (dragOccurred.current) return;
+                playSound('openCard');
+                onSelect(mod);
+              }}
+              className={`w-28 h-28 sm:w-36 sm:h-36 rounded-full flex flex-col items-center justify-center bg-gradient-to-br ${mod.color} ${mod.shadow} shadow-xl border-[4px] border-white/75 text-white gpu-layer`}
+            >
+              <i className={`fa-solid ${mod.icon} text-3xl sm:text-4xl mb-1.5 drop-shadow-sm pointer-events-none`}></i>
+              <span className="font-display font-black text-xs sm:text-sm tracking-wide drop-shadow-sm px-2 text-center leading-tight pointer-events-none">
+                {mod.name}
+              </span>
+            </motion.div>
+          </div>
+        </motion.div>
+      );
+    };
+
+    // --- TARGETA PRÈVIA ABANS D'ENTRAR (ESTIL DUOLINGO / WII CHANNEL) ---
+    const ModuleModal = ({ mod, onClose }) => {
+      if (!mod) return null;
+
+      const handleStart = () => {
+        playSound('launch');
+        setTimeout(() => {
+          window.location.href = mod.link;
+        }, 160);
+      };
+
+      return (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4">
+          {/* Fons fosc difuminat */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm"
+          />
+
+          {/* Targeta Central */}
+          <motion.div
+            initial={{ scale: 0.75, opacity: 0, y: 30 }}
+            animate={{ scale: 1, opacity: 1, y: 0 }}
+            exit={{ scale: 0.8, opacity: 0, y: 20 }}
+            transition={{ type: "spring", stiffness: 360, damping: 25 }}
+            className="relative z-10 w-full max-w-md bg-white rounded-[36px] border-[3px] border-b-[8px] border-slate-200 p-7 sm:p-8 text-center shadow-2xl"
+          >
+            {/* Botó tancar */}
+            <button
+              onClick={() => { playSound('pop'); onClose(); }}
+              className="absolute top-5 right-5 w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-400 hover:text-slate-600 flex items-center justify-center text-lg font-bold transition-colors"
+            >
+              <i className="fa-solid fa-xmark"></i>
+            </button>
+
+            {/* Icona gegant animada */}
+            <div className={`w-24 h-24 sm:w-28 sm:h-28 mx-auto rounded-[30px] bg-gradient-to-br ${mod.color} ${mod.shadow} shadow-xl border-4 border-white flex items-center justify-center text-white text-5xl mb-5 float-a`}>
+              <i className={`fa-solid ${mod.icon}`}></i>
+            </div>
+
+            {/* Etiqueta de matèria */}
+            <span className={`inline-block text-xs font-black uppercase tracking-wider px-3.5 py-1 rounded-full mb-3 ${mod.badgeBg}`}>
+              {mod.tag}
+            </span>
+
+            {/* Títol */}
+            <h3 className="text-3xl sm:text-4xl font-display font-black text-slate-800 mb-3">
+              {mod.name}
+            </h3>
+
+            {/* Descripció */}
+            <p className="text-slate-500 font-bold text-base leading-relaxed mb-8">
+              {mod.desc}
+            </p>
+
+            {/* Botó d'acció 3D */}
+            <button
+              onClick={handleStart}
+              className={`w-full ${mod.solidBg} ${mod.borderDark} border-x-2 border-t-2 border-b-[6px] text-white font-display font-black text-xl py-4 rounded-[24px] shadow-lg duo-btn uppercase tracking-wider flex items-center justify-center gap-3 transition-transform hover:brightness-105`}
+            >
+              <span>Practicar</span>
+              <i className="fa-solid fa-arrow-right"></i>
+            </button>
+          </motion.div>
+        </div>
+      );
+    };
+
+    function App() {
+      const [booting, setBooting] = useState(true);
+      const [seed, setSeed] = useState(0);
+      const [selectedMod, setSelectedMod] = useState(null);
+      const constraintsRef = useRef(null);
+
+      const honeycombRows = useMemo(() => {
+        const shuffled = [...MODULS].sort(() => Math.random() - 0.5);
+        return buildDynamicHoneycomb(shuffled);
+      }, [seed]);
+
+      let globalIndex = 0;
+
+      return (
+        <div ref={constraintsRef} className="w-full h-full fixed inset-0 overflow-hidden bg-slate-50 flex flex-col items-center justify-center">
+          
+          <AnimatePresence>
+            {booting && <BootScreen onComplete={() => setBooting(false)} />}
+          </AnimatePresence>
+
+          <div className="canvas-bg"></div>
+
+          {/* BARRA SUPERIOR */}
+          {!booting && (
+            <motion.header
+              initial={{ y: -30, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ duration: 0.4 }}
+              className="absolute top-5 left-5 right-5 sm:top-8 sm:left-8 sm:right-8 flex items-center justify-between z-50 pointer-events-none"
+            >
+              <div className="flex items-center gap-3 bg-white/85 backdrop-blur-md border-2 border-white p-2.5 sm:p-3.5 rounded-3xl shadow-sm pointer-events-auto">
+                <div className="w-10 h-10 bg-slate-800 text-white rounded-[14px] flex items-center justify-center text-xl">
+                  <i className="fa-solid fa-graduation-cap"></i>
+                </div>
+                <h1 className="text-lg sm:text-xl font-display font-black text-slate-800 leading-none pr-1">
+                  2nBatx <span className="text-duoGreen">OS</span>
+                </h1>
+              </div>
+
+              <div className="flex items-center gap-3 pointer-events-auto">
+                <button
+                  onClick={() => { playSound('pop'); setSeed(s => s + 1); }}
+                  title="Barrejar bombolles"
+                  className="w-11 h-11 bg-white/85 backdrop-blur-md border-2 border-white rounded-2xl shadow-sm flex items-center justify-center text-slate-500 hover:text-duoGreen active:scale-90 transition-transform"
+                >
+                  <i className="fa-solid fa-shuffle"></i>
+                </button>
+
+                <div className="bg-white/85 backdrop-blur-md border-2 border-white p-2.5 sm:p-3.5 rounded-3xl shadow-sm text-right">
+                  <LiveClock />
+                </div>
+              </div>
+            </motion.header>
+          )}
+
+          {/* TÍTOL CENTRAL */}
+          {!booting && (
+            <motion.div
+              initial={{ opacity: 0, y: -15 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.15 }}
+              className="relative z-10 text-center mb-6 sm:mb-8 px-4 pointer-events-none mt-12 sm:mt-8"
+            >
+              <h2 className="text-2xl sm:text-4xl font-display font-black text-slate-800 tracking-tight">
+                Què vols estudiar avui?
+              </h2>
+              <p className="text-xs sm:text-sm font-bold text-slate-400 mt-1">
+                Toca una bombolla per veure els detalls o arrossega-la per moure-la
+              </p>
+            </motion.div>
+          )}
+
+          {/* PANAL CIRCULAR HONEYCOMB DINÀMIC */}
+          {!booting && (
+            <div key={seed} className="relative z-10 flex flex-col items-center justify-center pointer-events-none">
+              {honeycombRows.map((row, rIdx) => (
+                <div
+                  key={rIdx}
+                  className={`flex items-center justify-center gap-3 sm:gap-5 ${rIdx > 0 ? '-mt-4 sm:-mt-6' : ''}`}
+                >
+                  {row.map((mod) => {
+                    const currentIdx = globalIndex++;
+                    return (
+                      <Bubble
+                        key={mod.id}
+                        mod={mod}
+                        index={currentIdx}
+                        constraintsRef={constraintsRef}
+                        onSelect={(m) => setSelectedMod(m)}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* MODAL AMB DESCRIPCIÓ I BOTÓ PRACTICAR */}
+          <AnimatePresence>
+            {selectedMod && (
+              <ModuleModal 
+                mod={selectedMod} 
+                onClose={() => setSelectedMod(null)} 
+              />
+            )}
+          </AnimatePresence>
+
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
