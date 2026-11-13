@@ -23,8 +23,9 @@
   <!-- Framer Motion -->
   <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
 
-  <!-- jsPDF per generar el Ticket PDF -->
+  <!-- jsPDF (crea el Ticket) + pdf-lib (fusiona els PDFs dels apunts) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 
   <!-- Canvas Confetti -->
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
@@ -72,7 +73,7 @@
   <div id="root" class="flex-1 flex flex-col"></div>
 
   <script type="text/babel">
-    const { useState, useMemo } = React;
+    const { useState, useMemo, useRef } = React;
     const { motion, AnimatePresence } = window.Motion;
 
     // --- ÀUDIO ---
@@ -124,7 +125,7 @@
       return null;
     };
 
-    // --- CATÀLEG D'ASSIGNATURES PREGUARDADES AMB ICONA I COLOR ---
+    // --- CATÀLEG D'ASSIGNATURES PREGUARDADES ---
     const SUGGESTED_SUBJECTS = [
       { name: 'Física', icon: 'fa-atom', pdfSymbol: 'atom', colorId: 'blue', badgeBg: 'bg-sky-100 text-sky-700 border-sky-200' },
       { name: 'Química', icon: 'fa-flask', pdfSymbol: 'flask', colorId: 'purple', badgeBg: 'bg-purple-100 text-purple-700 border-purple-200' },
@@ -148,7 +149,7 @@
       { label: 'Simulacre preguntes curtes PAU', icon: 'fa-file-pen', pdfSymbol: 'doc', color: [71, 85, 105] }
     ];
 
-    // --- DIBUIXANT D'ICONES VECTORIALS PER AL PDF (jsPDF) ---
+    // --- ICONES VECTORIALS PER AL PDF ---
     const drawVectorIcon = (doc, symbol, cx, cy, size, rgb) => {
       doc.saveGraphicsState();
       doc.setDrawColor(...rgb);
@@ -157,36 +158,36 @@
       const r = size / 2;
 
       switch (symbol) {
-        case 'atom': // Física
+        case 'atom':
           doc.circle(cx, cy, r * 0.22, 'F');
           doc.ellipse(cx, cy, r * 0.9, r * 0.35, 'S');
           doc.ellipse(cx, cy, r * 0.35, r * 0.9, 'S');
           break;
-        case 'flask': // Química
+        case 'flask':
           doc.line(cx - r * 0.25, cy - r * 0.85, cx + r * 0.25, cy - r * 0.85);
           doc.line(cx - r * 0.18, cy - r * 0.85, cx - r * 0.18, cy - r * 0.35);
           doc.line(cx + r * 0.18, cy - r * 0.85, cx + r * 0.18, cy - r * 0.35);
           doc.triangle(cx, cy - r * 0.45, cx - r * 0.8, cy + r * 0.85, cx + r * 0.8, cy + r * 0.85, 'S');
           doc.line(cx - r * 0.45, cy + r * 0.3, cx + r * 0.45, cy + r * 0.3);
           break;
-        case 'dna': // Biologia
+        case 'dna':
           doc.line(cx - r * 0.5, cy - r * 0.8, cx + r * 0.5, cy + r * 0.8);
           doc.line(cx + r * 0.5, cy - r * 0.8, cx - r * 0.5, cy + r * 0.8);
           doc.line(cx - r * 0.35, cy - r * 0.55, cx + r * 0.35, cy - r * 0.55);
           doc.line(cx - r * 0.35, cy + r * 0.55, cx + r * 0.35, cy + r * 0.55);
           break;
-        case 'compass': // Dibuix Tècnic
+        case 'compass':
           doc.circle(cx, cy - r * 0.65, r * 0.18, 'F');
           doc.line(cx, cy - r * 0.5, cx - r * 0.65, cy + r * 0.85);
           doc.line(cx, cy - r * 0.5, cx + r * 0.65, cy + r * 0.85);
           doc.line(cx - r * 0.45, cy + r * 0.2, cx + r * 0.45, cy + r * 0.2);
           break;
-        case 'chart': // Economia
+        case 'chart':
           doc.rect(cx - r * 0.75, cy + r * 0.1, r * 0.35, r * 0.75, 'F');
           doc.rect(cx - r * 0.18, cy - r * 0.35, r * 0.35, r * 1.2, 'F');
           doc.rect(cx + r * 0.4, cy - r * 0.8, r * 0.35, r * 1.65, 'F');
           break;
-        case 'gear': // Tecnologia
+        case 'gear':
           doc.circle(cx, cy, r * 0.6, 'S');
           doc.circle(cx, cy, r * 0.22, 'F');
           for (let a = 0; a < 360; a += 45) {
@@ -194,53 +195,52 @@
             doc.line(cx + Math.cos(rad) * r * 0.6, cy + Math.sin(rad) * r * 0.6, cx + Math.cos(rad) * r * 0.9, cy + Math.sin(rad) * r * 0.9);
           }
           break;
-        case 'pillars': // Llatí / Grec
+        case 'pillars':
           doc.triangle(cx, cy - r * 0.9, cx - r * 0.9, cy - r * 0.45, cx + r * 0.9, cy - r * 0.45, 'F');
           doc.line(cx - r * 0.55, cy - r * 0.4, cx - r * 0.55, cy + r * 0.7);
           doc.line(cx, cy - r * 0.4, cx, cy + r * 0.7);
           doc.line(cx + r * 0.55, cy - r * 0.4, cx + r * 0.55, cy + r * 0.7);
           doc.line(cx - r * 0.85, cy + r * 0.8, cx + r * 0.85, cy + r * 0.8);
           break;
-        case 'palette': // Disseny
+        case 'palette':
           doc.circle(cx, cy, r * 0.82, 'S');
           doc.circle(cx - r * 0.3, cy - r * 0.25, r * 0.15, 'F');
           doc.circle(cx + r * 0.25, cy - r * 0.3, r * 0.15, 'F');
           doc.circle(cx - r * 0.25, cy + r * 0.3, r * 0.15, 'F');
           break;
-        case 'bolt': // Kahoot
+        case 'bolt':
           doc.triangle(cx + r * 0.15, cy - r * 0.9, cx - r * 0.55, cy + r * 0.1, cx + r * 0.1, cy + r * 0.1, 'F');
           doc.triangle(cx - r * 0.15, cy + r * 0.9, cx + r * 0.55, cy - r * 0.1, cx - r * 0.1, cy - r * 0.1, 'F');
           break;
-        case 'check': // Veritat o Mentida
+        case 'check':
           doc.line(cx - r * 0.65, cy + r * 0.05, cx - r * 0.15, cy + r * 0.6);
           doc.line(cx - r * 0.15, cy + r * 0.6, cx + r * 0.75, cy - r * 0.55);
           break;
-        case 'link': // Conectar
+        case 'link':
           doc.circle(cx - r * 0.35, cy, r * 0.42, 'S');
           doc.circle(cx + r * 0.35, cy, r * 0.42, 'S');
           break;
-        case 'pen': // Mot Perdut
+        case 'pen':
           doc.line(cx - r * 0.6, cy + r * 0.6, cx + r * 0.6, cy - r * 0.6);
           doc.line(cx - r * 0.7, cy + r * 0.7, cx + r * 0.7, cy + r * 0.7);
           break;
-        case 'math': // Càlcul
+        case 'math':
           doc.line(cx - r * 0.75, cy + r * 0.1, cx - r * 0.4, cy + r * 0.7);
           doc.line(cx - r * 0.4, cy + r * 0.7, cx - r * 0.05, cy - r * 0.65);
           doc.line(cx - r * 0.05, cy - r * 0.65, cx + r * 0.8, cy - r * 0.65);
           break;
-        case 'timeline': // Línia temporal
+        case 'timeline':
           doc.line(cx, cy - r * 0.8, cx, cy + r * 0.8);
           doc.circle(cx, cy - r * 0.55, r * 0.22, 'F');
           doc.circle(cx, cy, r * 0.22, 'F');
           doc.circle(cx, cy + r * 0.55, r * 0.22, 'F');
           break;
-        case 'image': // Esquemes
+        case 'image':
           doc.rect(cx - r * 0.8, cy - r * 0.65, r * 1.6, r * 1.3, 'S');
           doc.circle(cx - r * 0.3, cy - r * 0.2, r * 0.16, 'F');
           doc.triangle(cx - r * 0.5, cy + r * 0.5, cx + r * 0.1, cy - r * 0.05, cx + r * 0.65, cy + r * 0.5, 'F');
           break;
-        case 'doc': // Simulacre PAU
-        default: // Estrella / Generic
+        default:
           doc.circle(cx, cy, r * 0.75, 'S');
           doc.circle(cx, cy, r * 0.28, 'F');
           break;
@@ -248,11 +248,12 @@
       doc.restoreGraphicsState();
     };
 
-    // --- GENERADOR DEL TICKET PDF PREMIUM ---
-    const generateTicketPDF = (data, ticketId) => {
+    // --- GENERADOR DEL TICKET + FUSIÓ AMB ELS PDFS PUJATS ---
+    const generateAndMergePDF = async (data, ticketId, attachedFiles, onProgress) => {
       const { jsPDF } = window.jspdf;
-      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const { PDFDocument } = window.PDFLib;
 
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
       const pageW = 210;
       const pageH = 297;
       const margin = 15;
@@ -268,16 +269,11 @@
       };
       const palette = colorMap[data.themeColor] || colorMap.blue;
 
-      // Dibuixa el fons base i el marc de tiquet
       const drawPageFrame = () => {
         doc.setFillColor(241, 245, 249);
         doc.rect(0, 0, pageW, pageH, 'F');
-
-        // Ombra 3D del tiquet principal
         doc.setFillColor(203, 213, 225);
         doc.roundedRect(margin, 12, contentW, pageH - 22, 8, 8, 'F');
-
-        // Cos blanc del tiquet
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(226, 232, 240);
         doc.setLineWidth(0.6);
@@ -287,15 +283,13 @@
       drawPageFrame();
       let y = 10;
 
-      // 1. CAPÇALERA HERO AMB OMBRES 3D I ICONA DE L'ASSIGNATURA
+      // Capçalera
       doc.setFillColor(...palette.dark);
       doc.roundedRect(margin, y, contentW, 48, 8, 8, 'F');
       doc.setFillColor(...palette.main);
       doc.roundedRect(margin, y, contentW, 45.5, 8, 8, 'F');
-      // Tapem els cantons inferiors arrodonits de la capçalera perquè encaixi recte amb el tiquet
       doc.rect(margin, y + 36, contentW, 12, 'F');
 
-      // Medalló blanc circular amb la icona de l'assignatura
       const badgeX = margin + 22;
       const badgeY = y + 24;
       doc.setFillColor(...palette.dark);
@@ -304,10 +298,8 @@
       doc.circle(badgeX, badgeY, 13.5, 'F');
 
       const matchedSub = SUGGESTED_SUBJECTS.find(s => s.name.toLowerCase() === data.subject.toLowerCase());
-      const subSymbol = matchedSub ? matchedSub.pdfSymbol : 'default';
-      drawVectorIcon(doc, subSymbol, badgeX, badgeY, 14, palette.main);
+      drawVectorIcon(doc, matchedSub ? matchedSub.pdfSymbol : 'default', badgeX, badgeY, 14, palette.main);
 
-      // Títols capçalera
       const textStartX = margin + 42;
       doc.setFillColor(255, 255, 255);
       doc.roundedRect(textStartX, y + 8, 58, 6.5, 3, 3, 'F');
@@ -328,24 +320,21 @@
 
       y += 48;
 
-      // 2. TALL DE PERFORACIÓ ESTIL ENTRADA / PASSI VIP
+      // Tall de perforació
       doc.setDrawColor(203, 213, 225);
       doc.setLineWidth(0.7);
       doc.setLineDashPattern([2.5, 2.5], 0);
       doc.line(margin + 6, y, pageW - margin - 6, y);
       doc.setLineDashPattern([], 0);
-
-      // Mosques semicirculars als laterals
       doc.setFillColor(241, 245, 249);
       doc.circle(margin, y, 4.5, 'F');
       doc.circle(pageW - margin, y, 4.5, 'F');
 
       y += 7;
-
-      // 3. AVÍS DESTACAT SENSE COMPROMÍS
       const innerMargin = margin + 8;
       const innerW = contentW - 16;
 
+      // Avís sense compromís
       doc.setFillColor(254, 243, 199);
       doc.setDrawColor(251, 191, 36);
       doc.setLineWidth(0.6);
@@ -363,15 +352,14 @@
       doc.text('PROPOSTA SUBJECTA A REVISIÓ (SENSE COMPROMÍS)', innerMargin + 15, y + 8);
       doc.setFont('helvetica', 'normal');
       doc.setFontSize(8.5);
-      const warnLines = doc.splitTextToSize(
-        'Envia aquest PDF a l\'administrador juntament amb els APUNTS DEL TEMA. S\'estudiarà i es PLANTEJARÀ la seva creació sense cap garantia.',
-        innerW - 18
-      );
-      doc.text(warnLines, innerMargin + 15, y + 13.5);
+      const warnText = attachedFiles.length > 0
+        ? `Aquest PDF inclou ${attachedFiles.length} fitxer(s) d'apunts adjunts a les pàgines següents. S'estudiarà i es PLANTEJARÀ la seva creació.`
+        : 'Envia aquest PDF a l\'administrador juntament amb els APUNTS DEL TEMA. S\'estudiarà i es PLANTEJARÀ la seva creació sense cap garantia.';
+      doc.text(doc.splitTextToSize(warnText, innerW - 18), innerMargin + 15, y + 13.5);
 
       y += 28;
 
-      // 4. TARGETES DE MECÀNIQUES AMB ICONES VECTORIALS EN GRAELLA
+      // Mecàniques seleccionades
       doc.setTextColor(30, 41, 59);
       doc.setFont('helvetica', 'bold');
       doc.setFontSize(11);
@@ -396,19 +384,16 @@
           y = 20;
         }
 
-        // Ombra i fons de la píndola
         doc.setFillColor(226, 232, 240);
         doc.roundedRect(px, y + 0.8, colW, pillH, 3.5, 3.5, 'F');
         doc.setFillColor(248, 250, 252);
         doc.setDrawColor(226, 232, 240);
         doc.roundedRect(px, y, colW, pillH, 3.5, 3.5, 'FD');
 
-        // Cercle de color amb la icona dibuixada
         doc.setFillColor(...qItem.color);
         doc.circle(px + 6.5, y + pillH / 2, 3.8, 'F');
         drawVectorIcon(doc, qItem.pdfSymbol, px + 6.5, y + pillH / 2, 4.4, [255, 255, 255]);
 
-        // Text de l'activitat
         doc.setTextColor(51, 65, 85);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8.5);
@@ -422,7 +407,6 @@
 
       y += 4;
 
-      // 5. BLOCS DE RESPOSTA DETALLATS
       const addDetailCard = (numberBadge, title, bodyText) => {
         const cleanBody = bodyText && bodyText.trim() ? bodyText.trim() : 'No especificat per l\'usuari.';
         const lines = doc.splitTextToSize(cleanBody, innerW - 14);
@@ -434,16 +418,12 @@
           y = 20;
         }
 
-        // Ombra 3D subtil
         doc.setFillColor(226, 232, 240);
         doc.roundedRect(innerMargin, y + 1, innerW, cardH, 4, 4, 'F');
-
-        // Targeta
         doc.setFillColor(255, 255, 255);
         doc.setDrawColor(226, 232, 240);
         doc.roundedRect(innerMargin, y, innerW, cardH, 4, 4, 'FD');
 
-        // Píndola numèrica del color de l'assignatura
         doc.setFillColor(...palette.light);
         doc.roundedRect(innerMargin + 4, y + 3.5, 7, 6, 2, 2, 'F');
         doc.setTextColor(...palette.dark);
@@ -451,12 +431,10 @@
         doc.setFontSize(8.5);
         doc.text(String(numberBadge), innerMargin + 6.5, y + 7.7);
 
-        // Títol del bloc
         doc.setTextColor(30, 41, 59);
         doc.setFontSize(10);
         doc.text(title, innerMargin + 13.5, y + 7.8);
 
-        // Contingut
         doc.setTextColor(71, 85, 105);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(9.2);
@@ -468,19 +446,23 @@
       addDetailCard(1, 'Temari i blocs que es volen treballar', data.topics);
       addDetailCard(2, 'Visió estètica, estructura i format visual', data.visualization);
       addDetailCard(3, 'Contingut imprescindible (fórmules, conceptes, exemples)', data.mustHaveContent);
-      addDetailCard(4, 'Dificultat i material d\'apunts adjunt', `Nivell desitjat: ${data.difficulty}   •   Format d'apunts: ${data.notesFormat}`);
+      
+      const filesSummary = attachedFiles.length > 0
+        ? `Nivell: ${data.difficulty}  •  Fitxers PDF adjuntats (${attachedFiles.length}): ${attachedFiles.map(f => f.name).join(', ')}`
+        : `Nivell: ${data.difficulty}  •  Cap fitxer PDF fusionat automàticament`;
+      addDetailCard(4, 'Dificultat i apunts fusionats al document', filesSummary);
+
       if (data.extraNotes && data.extraNotes.trim()) {
         addDetailCard(5, 'Notes addicionals per a l\'administrador', data.extraNotes);
       }
 
-      // 6. PEU DE TICKET AMB CODI DE BARRES DECORATIU
+      // Peu de ticket
       const footerY = pageH - 22;
       doc.setDrawColor(203, 213, 225);
       doc.setLineDashPattern([2, 2], 0);
       doc.line(innerMargin, footerY - 3, pageW - innerMargin, footerY - 3);
       doc.setLineDashPattern([], 0);
 
-      // Mini codi de barres estètic a l'esquerra
       let bx = innerMargin;
       const bars = [1.2, 0.5, 1.8, 0.7, 0.5, 1.5, 0.9, 0.5, 1.4, 0.6, 1.1, 0.5, 1.6, 0.8];
       doc.setFillColor(148, 163, 184);
@@ -491,14 +473,50 @@
 
       doc.setFontSize(8);
       doc.setTextColor(100, 116, 139);
-      doc.text(`SOLICITATOR • 2NBATX OS   |   Adjunta els apunts en enviar aquest PDF`, pageW - innerMargin, footerY + 4, { align: 'right' });
+      doc.text(`SOLICITATOR • 2NBATX OS   |   Tiquet oficial de proposta`, pageW - innerMargin, footerY + 4, { align: 'right' });
 
-      doc.save(`Ticket_${data.subject.replace(/\s+/g, '_')}_${ticketId}.pdf`);
+      // FUSIÓ AMB PDF-LIB
+      onProgress('Preparant el tiquet principal...');
+      const ticketBytes = doc.output('arraybuffer');
+
+      if (!attachedFiles || attachedFiles.length === 0) {
+        doc.save(`Ticket_${data.subject.replace(/\s+/g, '_')}_${ticketId}.pdf`);
+        return;
+      }
+
+      const mergedPdf = await PDFDocument.create();
+      const ticketPdfDoc = await PDFDocument.load(ticketBytes);
+      const ticketPages = await mergedPdf.copyPages(ticketPdfDoc, ticketPdfDoc.getPageIndices());
+      ticketPages.forEach((page) => mergedPdf.addPage(page));
+
+      for (let i = 0; i < attachedFiles.length; i++) {
+        const fileObj = attachedFiles[i];
+        onProgress(`Fusionant apunts (${i + 1}/${attachedFiles.length}): ${fileObj.name}...`);
+        const donorPdf = await PDFDocument.load(fileObj.buffer, { ignoreEncryption: true });
+        const copiedPages = await mergedPdf.copyPages(donorPdf, donorPdf.getPageIndices());
+        copiedPages.forEach((page) => mergedPdf.addPage(page));
+      }
+
+      onProgress('Finalitzant document complet...');
+      const finalPdfBytes = await mergedPdf.save();
+      const blob = new Blob([finalPdfBytes], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Ticket_i_Apunts_${data.subject.replace(/\s+/g, '_')}_${ticketId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
     };
 
     function App() {
       const [step, setStep] = useState(0);
       const [ticketId] = useState(() => Math.random().toString(36).substring(2, 8).toUpperCase());
+      const [attachedPdfs, setAttachedPdfs] = useState([]); // [{ id, name, size, pageCount, buffer }]
+      const [isMerging, setIsMerging] = useState(false);
+      const [mergeStatus, setMergeStatus] = useState('');
+      const fileInputRef = useRef(null);
 
       const [form, setForm] = useState({
         subject: '',
@@ -508,7 +526,6 @@
         visualization: '',
         mustHaveContent: '',
         difficulty: 'Equilibrat (Repàs + PAU)',
-        notesFormat: 'PDF / Apunts propis',
         themeColor: 'blue',
         extraNotes: ''
       });
@@ -522,6 +539,75 @@
           badgeBg: 'bg-purple-100 text-purple-700 border-purple-200'
         };
       }, [form.subject]);
+
+      // Gestió de pujada de múltiples PDFs
+      const handleFilesAdded = async (fileList) => {
+        const files = Array.from(fileList).filter(f => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf'));
+        if (files.length === 0) {
+          playSound('error');
+          alert('Només es poden adjuntar fitxers en format PDF (.pdf).');
+          return;
+        }
+
+        const { PDFDocument } = window.PDFLib;
+        const newlyProcessed = [];
+
+        for (const file of files) {
+          try {
+            const buffer = await file.arrayBuffer();
+            const pdfDoc = await PDFDocument.load(buffer, { ignoreEncryption: true });
+            newlyProcessed.push({
+              id: Math.random().toString(36).substring(2, 9),
+              name: file.name,
+              sizeMB: (file.size / (1024 * 1024)).toFixed(2),
+              pageCount: pdfDoc.getPageCount(),
+              buffer
+            });
+          } catch (err) {
+            playSound('error');
+            alert(`No s'ha pogut llegir el fitxer "${file.name}". Assegura't que no estigui protegit amb contrasenya.`);
+          }
+        }
+
+        if (newlyProcessed.length > 0) {
+          playSound('pop');
+          setAttachedPdfs(prev => [...prev, ...newlyProcessed]);
+        }
+      };
+
+      const removePdf = (id) => {
+        playSound('pop');
+        setAttachedPdfs(prev => prev.filter(p => p.id !== id));
+      };
+
+      const movePdf = (index, direction) => {
+        playSound('pop');
+        setAttachedPdfs(prev => {
+          const copy = [...prev];
+          const target = index + direction;
+          if (target < 0 || target >= copy.length) return copy;
+          [copy[index], copy[target]] = [copy[target], copy[index]];
+          return copy;
+        });
+      };
+
+      const totalAttachedPages = attachedPdfs.reduce((acc, f) => acc + f.pageCount, 0);
+
+      const handleDownloadMerged = async () => {
+        if (isMerging) return;
+        setIsMerging(true);
+        try {
+          await generateAndMergePDF(form, ticketId, attachedPdfs, (msg) => setMergeStatus(msg));
+          playSound('success');
+        } catch (err) {
+          console.error(err);
+          playSound('error');
+          alert('Hi ha hagut un error en ajuntar els PDFs. Comprova que els fitxers no estiguin malmesos.');
+        } finally {
+          setIsMerging(false);
+          setMergeStatus('');
+        }
+      };
 
       const colorOptions = [
         { id: 'blue', name: 'Blau Elèctric', bg: 'bg-duoBlue' },
@@ -566,13 +652,104 @@
       const totalSteps = 5;
       const progressPct = step === 0 ? 0 : step > totalSteps ? 100 : (step / totalSteps) * 100;
 
+      // Component reutilitzable de zona de pujada de PDFs
+      const PdfUploaderBox = () => (
+        <div className="space-y-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            multiple
+            onChange={(e) => {
+              handleFilesAdded(e.target.files);
+              e.target.value = '';
+            }}
+            className="hidden"
+          />
+
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleFilesAdded(e.dataTransfer.files);
+            }}
+            onClick={() => fileInputRef.current && fileInputRef.current.click()}
+            className="border-[3px] border-dashed border-duoBlue/60 hover:border-duoBlue bg-sky-50/70 hover:bg-sky-50 rounded-[24px] p-5 text-center cursor-pointer transition-all group"
+          >
+            <div className="w-12 h-12 mx-auto rounded-2xl bg-duoBlue text-white flex items-center justify-center text-2xl shadow-sm mb-2 group-hover:scale-110 transition-transform">
+              <i className="fa-solid fa-file-arrow-up"></i>
+            </div>
+            <p className="font-display font-black text-slate-800 text-base">
+              Puja els teus apunts en PDF (pots posar-ne tants com vulguis)
+            </p>
+            <p className="text-xs font-bold text-slate-500 mt-0.5">
+              Fes clic o arrossega diversos fitxers .pdf aquí. S'ajuntaran tots darrere del Ticket!
+            </p>
+          </div>
+
+          {attachedPdfs.length > 0 && (
+            <div className="space-y-2 bg-slate-50 p-3.5 rounded-[22px] border-2 border-slate-200">
+              <div className="flex items-center justify-between text-xs font-black text-slate-500 uppercase px-1">
+                <span>Fitxers preparats per fusionar ({attachedPdfs.length})</span>
+                <span className="text-duoBlueDark">{totalAttachedPages} pàgines d'apunts</span>
+              </div>
+
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {attachedPdfs.map((pdf, idx) => (
+                  <div key={pdf.id} className="bg-white border-2 border-slate-200 rounded-2xl p-2.5 flex items-center justify-between gap-2 shadow-sm">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 rounded-xl bg-red-100 text-duoRed flex items-center justify-center text-base shrink-0 font-black">
+                        <i className="fa-solid fa-file-pdf"></i>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-display font-bold text-sm text-slate-800 truncate">{pdf.name}</p>
+                        <p className="text-[11px] font-bold text-slate-400">{pdf.pageCount} pàg. • {pdf.sizeMB} MB</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        disabled={idx === 0}
+                        onClick={() => movePdf(idx, -1)}
+                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 text-xs flex items-center justify-center"
+                        title="Pujar ordre"
+                      >
+                        <i className="fa-solid fa-chevron-up"></i>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={idx === attachedPdfs.length - 1}
+                        onClick={() => movePdf(idx, 1)}
+                        className="w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 disabled:opacity-30 text-slate-600 text-xs flex items-center justify-center"
+                        title="Baixar ordre"
+                      >
+                        <i className="fa-solid fa-chevron-down"></i>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removePdf(pdf.id)}
+                        className="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 text-duoRed text-xs flex items-center justify-center ml-1"
+                        title="Treure fitxer"
+                      >
+                        <i className="fa-solid fa-trash"></i>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+
       return (
         <div className="w-full max-w-3xl mx-auto p-4 sm:p-6 flex flex-col min-h-screen justify-between">
           
           {/* BARRA SUPERIOR */}
           <header className="flex items-center justify-between gap-4 py-2">
             <a
-              href="index.html"
+              href="https://pbfedu.github.io/2nbatx"
               onClick={() => playSound('pop')}
               className="flex items-center gap-2 bg-white border-2 border-b-4 border-slate-200 px-4 py-2 rounded-2xl font-display font-black text-slate-600 hover:text-slate-900 duo-btn text-sm"
             >
@@ -617,7 +794,7 @@
                       Crea la teva proposta de mòdul
                     </h1>
                     <p className="text-slate-500 font-bold text-base sm:text-lg max-w-xl mx-auto">
-                      Dissenya com t'agradaria estudiar una matèria de modalitat, genera el teu <strong>Ticket PDF</strong> i envia'l a l'administrador amb els teus apunts.
+                      Dissenya com t'agradaria estudiar una matèria de modalitat, puja els teus <strong>apunts en PDF</strong> i genera un únic document amb el <strong>Ticket davant i tots els apunts fusionats darrere</strong>.
                     </p>
                   </div>
 
@@ -642,7 +819,7 @@
                 </motion.div>
               )}
 
-              {/* PAS 1: QUINA MATÈRIA VOLS? (AMB ICONES PREGUARDADES) */}
+              {/* PAS 1: MATÈRIA */}
               {step === 1 && (
                 <motion.div
                   key="step1"
@@ -682,7 +859,6 @@
                     )}
                   </div>
 
-                  {/* Assignatures preguardades amb les seves icones */}
                   <div className="space-y-2.5">
                     <p className="text-xs font-black text-slate-400 uppercase">Assignatures preguardades (amb icona al PDF):</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -722,7 +898,7 @@
                 </motion.div>
               )}
 
-              {/* PAS 2: TEMARI CONCRET */}
+              {/* PAS 2: TEMARI + PUJAR FITXERS PDF D'APUNTS */}
               {step === 2 && (
                 <motion.div
                   key="step2"
@@ -736,37 +912,22 @@
                       <i className={`fa-solid ${selectedSubjectMeta.icon}`}></i> Pas 2 de 5 • {form.subject}
                     </span>
                     <h2 className="text-2xl sm:text-3xl font-display font-black text-slate-800 mt-1">
-                      Quins temes o blocs vols que entri?
+                      Temari i apunts en PDF
                     </h2>
                     <p className="text-slate-500 font-bold text-sm mt-1">
-                      Especifica si és un tema concret (ex: "Enllaç químic i estequiometria") o tot el curs.
+                      Explica els temes i puja tots els PDFs d'apunts que vulguis ajuntar dins del document final.
                     </p>
                   </div>
 
                   <textarea
-                    rows="4"
-                    placeholder="Escriu aquí els temes, unitats didàctiques o blocs que apareixen als apunts que adjuntaràs..."
+                    rows="3"
+                    placeholder="Escriu aquí els temes, unitats didàctiques o blocs que inclouen aquests apunts..."
                     value={form.topics}
                     onChange={(e) => setForm({ ...form, topics: e.target.value })}
                     className="w-full p-4 rounded-[22px] border-[3px] border-slate-200 bg-slate-50 focus:bg-white focus:border-duoBlue font-bold text-base outline-none resize-none"
                   />
 
-                  <div className="space-y-2">
-                    <label className="block text-sm font-black text-slate-600">Quin format d'apunts enviaràs?</label>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                      {['PDF / Apunts propis', 'Fotos de llibreta', 'Resums digitals / Docs'].map(fmt => (
-                        <button
-                          key={fmt}
-                          onClick={() => { playSound('pop'); setForm({ ...form, notesFormat: fmt }); }}
-                          className={`p-3 rounded-2xl border-2 border-b-4 font-display font-bold text-sm transition-all ${
-                            form.notesFormat === fmt ? 'bg-blue-50 border-duoBlue text-duoBlueDark' : 'bg-white border-slate-200 text-slate-600'
-                          }`}
-                        >
-                          {fmt}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  <PdfUploaderBox />
                 </motion.div>
               )}
 
@@ -813,7 +974,7 @@
                 </motion.div>
               )}
 
-              {/* PAS 4: COM HO VISUALITZES? */}
+              {/* PAS 4: DISSENY */}
               {step === 4 && (
                 <motion.div
                   key="step4"
@@ -862,7 +1023,7 @@
                 </motion.div>
               )}
 
-              {/* PAS 5: QUÈ HI POSARIES CONCRETAMENT? */}
+              {/* PAS 5: CONTINGUT CLAU */}
               {step === 5 && (
                 <motion.div
                   key="step5"
@@ -913,7 +1074,7 @@
                 </motion.div>
               )}
 
-              {/* PAS 6: TICKET GENERAT + DESCÀRREGA PDF */}
+              {/* PAS 6: TICKET FINAL + FUSIÓ PDF */}
               {step === 6 && (
                 <motion.div
                   key="step6"
@@ -932,57 +1093,49 @@
                             Ticket Llesta • #{ticketId}
                           </span>
                           <h2 className="text-2xl sm:text-3xl font-display font-black mt-1.5">{form.subject}</h2>
-                          <p className="text-slate-400 text-xs sm:text-sm font-bold">Proposta de mòdul de modalitat</p>
+                          <p className="text-slate-400 text-xs sm:text-sm font-bold">
+                            {attachedPdfs.length > 0
+                              ? `Ticket + ${attachedPdfs.length} PDF(s) d'apunts (${totalAttachedPages} pàgines)`
+                              : 'Proposta de mòdul de modalitat'}
+                          </p>
                         </div>
                       </div>
                     </div>
 
-                    <div className="p-6 sm:p-8 space-y-4 text-sm">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border-2 border-slate-100">
-                        <div>
-                          <span className="text-xs font-black text-slate-400 uppercase">Temes proposats</span>
-                          <p className="font-bold text-slate-700 mt-0.5 line-clamp-2">{form.topics || 'Tot el temari'}</p>
-                        </div>
-                        <div>
-                          <span className="text-xs font-black text-slate-400 uppercase">Nivell i Apunts</span>
-                          <p className="font-bold text-slate-700 mt-0.5">{form.difficulty} ({form.notesFormat})</p>
-                        </div>
-                      </div>
+                    <div className="p-6 sm:p-8 space-y-5 text-sm">
+                      {/* Permet afegir o reordenar més PDFs també des d'aquí */}
+                      <PdfUploaderBox />
 
-                      <div>
-                        <span className="text-xs font-black text-slate-400 uppercase">Mecàniques i icones incloses al PDF</span>
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {ALL_QUESTION_TYPES.filter(q => form.questionTypes.includes(q.label)).map(q => (
-                            <span key={q.label} className="bg-purple-100 text-purple-800 font-bold text-xs px-3 py-1.5 rounded-full flex items-center gap-1.5 border border-purple-200">
-                              <i className={`fa-solid ${q.icon}`}></i>
-                              <span>{q.label}</span>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 space-y-2 mt-4">
+                      <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-5 space-y-2">
                         <h4 className="font-display font-black text-amber-900 text-base flex items-center gap-2">
                           <i className="fa-solid fa-paper-plane text-amber-600"></i>
                           Passos següents un cop descarregat:
                         </h4>
                         <p className="text-amber-900/90 font-bold text-sm leading-relaxed">
-                          1. Descarrega el teu <strong>Ticket en PDF</strong> amb el botó de sota.<br/>
-                          2. Envia aquest PDF a l'administrador <strong>juntament amb els apunts d'aquest tema</strong>.<br/>
+                          1. Prem el botó verd per generar un <strong>únic PDF amb el Ticket a la primera pàgina i tots els teus apunts a continuació</strong>.<br/>
+                          2. Envia aquest fitxer complet a l'administrador.<br/>
                           3. Amb el material rebut, <strong>es PLANTEJARÀ que es faci</strong> (sense compromís ni garantia de creació).
                         </p>
                       </div>
 
                       <div className="pt-2 flex flex-col sm:flex-row gap-3">
                         <button
-                          onClick={() => { playSound('success'); generateTicketPDF(form, ticketId); }}
-                          className="flex-1 bg-duoGreen hover:bg-duoGreenDark text-white font-display font-black text-lg py-4 px-6 rounded-[22px] border-x-2 border-t-2 border-b-[6px] border-black/15 shadow-lg duo-btn flex items-center justify-center gap-3"
+                          disabled={isMerging}
+                          onClick={handleDownloadMerged}
+                          className="flex-1 bg-duoGreen hover:bg-duoGreenDark disabled:opacity-60 text-white font-display font-black text-lg py-4 px-6 rounded-[22px] border-x-2 border-t-2 border-b-[6px] border-black/15 shadow-lg duo-btn flex items-center justify-center gap-3"
                         >
-                          <i className="fa-solid fa-file-pdf text-2xl"></i>
-                          <span>Descarregar Ticket PDF</span>
+                          <i className={`fa-solid ${isMerging ? 'fa-spinner fa-spin' : 'fa-file-pdf'} text-2xl`}></i>
+                          <span>
+                            {isMerging
+                              ? (mergeStatus || 'Fusionant PDFs...')
+                              : attachedPdfs.length > 0
+                                ? `Descarregar Ticket + ${attachedPdfs.length} PDFs`
+                                : 'Descarregar Ticket PDF'}
+                          </span>
                         </button>
 
                         <button
+                          disabled={isMerging}
                           onClick={() => { playSound('pop'); setStep(1); }}
                           className="bg-slate-100 hover:bg-slate-200 text-slate-600 font-display font-black text-base py-4 px-6 rounded-[22px] border-2 border-b-[6px] border-slate-300 duo-btn"
                         >
