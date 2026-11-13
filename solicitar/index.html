@@ -111,10 +111,10 @@
       const clean = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
       
       const restricted = [
-        { keys: ['geografia', 'geo'], reason: 'Geografia  ja es troba a la llista de Solicitator.' },
-        { keys: ['historia del arte', 'historia de l\'art', 'historia de lart', 'art'], reason: 'Història de l\'Art  ja es troba a la llista de Solicitator.' },
-        { keys: ['literatura catalana', 'lit catalana'], reason: 'Literatura Catalana ja es troba a la llista de Solicitator.' },
-        { keys: ['catala', 'llengua catalana', 'castella', 'castellano', 'lengua castellana', 'angles', 'ingles', 'english', 'historia d\'espanya', 'historia de espana', 'historia', 'filosofia', 'fase general', 'comunes'], reason: 'Les matèries de la Fase General no es poden sol·licitar aquí (o ja existeixen o ja es troben a la llista d'espera).' }
+        { keys: ['geografia', 'geo'], reason: 'Geografia està exclosa de Solicitator.' },
+        { keys: ['historia del arte', 'historia de l\'art', 'historia de lart', 'art'], reason: 'Història de l\'Art està exclosa de Solicitator.' },
+        { keys: ['literatura catalana', 'lit catalana'], reason: 'Literatura Catalana està exclosa de Solicitator.' },
+        { keys: ['catala', 'llengua catalana', 'castella', 'castellano', 'lengua castellana', 'angles', 'ingles', 'english', 'historia d\'espanya', 'historia de espana', 'historia', 'filosofia', 'fase general', 'comunes'], reason: 'Les matèries de la Fase General no es poden sol·licitar aquí (ja existeixen o no són de modalitat).' }
       ];
 
       for (const item of restricted) {
